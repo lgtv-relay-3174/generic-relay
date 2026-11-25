@@ -3,10 +3,11 @@
 // A request must start with /t/<RELAY_TOKEN>/ (constant-time compare). The token prefix is removed and the rest is forwarded
 // to the ONE upstream, only if it matches the Xtream path shapes below. No redirects are followed, nothing is logged.
 const http = require('http');
+const https = require('https');
 const crypto = require('crypto');
 const need = (k) => { const v = (process.env[k] || '').trim(); if (!v) { console.error('missing env ' + k); process.exit(1); } return v; };
 const UP = new URL(need('UPSTREAM'));
-if (UP.protocol !== 'http:' || UP.username || UP.pathname !== '/') { console.error('UPSTREAM must be a bare http origin'); process.exit(1); }
+if ((UP.protocol !== 'http:' && UP.protocol !== 'https:') || UP.username || UP.pathname !== '/') { console.error('UPSTREAM must be a bare http(s) origin'); process.exit(1); }
 const ORIGINS = need('ALLOWED_ORIGINS').split(',').map(s => s.trim()).filter(Boolean);
 const TOKEN = need('RELAY_TOKEN');
 if (TOKEN.length < 16 || !/^[A-Za-z0-9_-]+$/.test(TOKEN)) { console.error('RELAY_TOKEN must be 16+ chars of A-Z a-z 0-9 _ -'); process.exit(1); }
@@ -32,7 +33,7 @@ http.createServer((q, r) => {
   const self = (q.headers['x-forwarded-proto'] || process.env.PUBLIC_PROTO || 'https') + '://' + q.headers.host + PREFIX;
   const h = { host: UP.host, 'user-agent': q.headers['user-agent'] || 'Mozilla/5.0' };
   if (q.headers.range) h.range = q.headers.range;
-  const req = http.request({ host: UP.hostname, port: UP.port || 80, path: u.pathname + u.search, method: q.method, headers: h }, (ur) => {
+  const req = (UP.protocol === 'https:' ? https : http).request({ host: UP.hostname, port: UP.port || (UP.protocol === 'https:' ? 443 : 80), path: u.pathname + u.search, method: q.method, headers: h }, (ur) => {
     const ct = ur.headers['content-type'] || '';
     r.statusCode = ur.statusCode >= 300 && ur.statusCode < 400 ? 502 : ur.statusCode;
     for (const k of ['content-type', 'content-range', 'accept-ranges']) if (ur.headers[k]) r.setHeader(k, ur.headers[k]);
