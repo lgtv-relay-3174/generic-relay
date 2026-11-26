@@ -47,7 +47,7 @@ function nodeProxy(pq, port, q, r, self) {
   rq.end();
 }
 
-const SERIES_HOST_D = '45.155.226.48'; let SERIES_HOST = SERIES_HOST_D;
+const SERIES_HOST_D = '45.155.226.48'; const SERIES_HOST_D2 = '103.205.17.197'; let SERIES_HOST = SERIES_HOST_D;
 let SERIES_PORT = null;
 function seriesProxy(L2, q, r, ext) {
   const port = L2.port || '80';
@@ -458,8 +458,8 @@ http.createServer((q, r) => {
     if (ur.statusCode >= 300 && ur.statusCode < 400 && /^\/series\//.test(u.pathname)) {
       ur.resume();
       let L3 = null; try { L3 = new URL(ur.headers.location, 'http://' + UPX.host); } catch (e) {}
-      if (!L3 || L3.protocol !== 'http:' || !hostOk(L3.hostname, SERIES_HOST_D) || L3.username || L3.password) { LAST = { at: new Date().toISOString(), kind: 'series-redirect-refused', location_host: L3 ? L3.hostname : 'unparsable' }; r.statusCode = 502; return r.end(); }
-      if (CUSTOM) { SERIES_HOST = L3.hostname; SERIES_PORT = null; }
+      if (!L3 || L3.protocol !== 'http:' || !(hostOk(L3.hostname, SERIES_HOST_D) || (!CUSTOM && L3.hostname === SERIES_HOST_D2)) || L3.username || L3.password) { LAST = { at: new Date().toISOString(), kind: 'series-redirect-refused', location_host: L3 ? L3.hostname : 'unparsable' }; r.statusCode = 502; return r.end(); }
+      { SERIES_HOST = L3.hostname; SERIES_PORT = null; }
       return seriesProxy(L3, q, r, ((u.pathname.match(/\.([A-Za-z0-9]{1,5})$/) || [])[1] || ''));
     }
     if (ur.statusCode >= 300 && ur.statusCode < 400 && /^\/live\//.test(u.pathname)) {
