@@ -55,18 +55,66 @@ function seriesProxy(L2, q, r, ext) {
   if (!/^\d{1,5}$/.test(port) || pq.includes('..') || pq.includes('//') || !SAFE_NODE_PATH.test(pq)) { r.statusCode = 403; return r.end('forbidden'); }
   if (!CUSTOM && SERIES_PORT && SERIES_PORT !== port) { LAST = { at: new Date().toISOString(), kind: 'series-port-changed' }; r.statusCode = 502; return r.end(); }
   SERIES_PORT = port;
-  const h = { host: SERIES_HOST + (port === '80' ? '' : ':' + port), 'user-agent': q.headers['user-agent'] || 'Mozilla/5.0' };
-  if (q.headers.range) h.range = q.headers.range;
-  const rq = http.request({ host: SERIES_HOST, port: parseInt(port, 10), path: pq, method: 'GET', headers: h, lookup: CUSTOM ? safeLookup : undefined }, (ur) => {
-    LAST = { at: new Date().toISOString(), kind: 'series-node-response', ext: ext, status: ur.statusCode, content_type: String(ur.headers['content-type'] || '').slice(0, 60), content_length: String(ur.headers['content-length'] || '').slice(0, 12), accept_ranges: String(ur.headers['accept-ranges'] || '').slice(0, 10), redirect_again: ur.statusCode >= 300 && ur.statusCode < 400 };
-    if (ur.statusCode >= 300 && ur.statusCode < 400) { ur.resume(); r.statusCode = 502; return r.end(); }
-    r.statusCode = ur.statusCode;
-    for (const k of ['content-type', 'content-range', 'accept-ranges', 'content-length']) if (ur.headers[k]) r.setHeader(k, ur.headers[k]);
-    ur.pipe(r);
-    r.on('close', () => ur.destroy());
-  });
-  r.on('error', () => {}); rq.on('error', (e) => { LAST = { at: new Date().toISOString(), kind: 'series-connect-error', code: String(e && e.code || 'unknown') }; if (!r.headersSent) { r.statusCode = 502; r.end(); } else { r.destroy(); } });
-  rq.end();
+  let rg = /^bytes=\d*-\d*$/.test(String(q.headers.range || '')) ? q.headers.range : '';
+  if (rg === 'bytes=0-') rg = '';
+  const m0 = /^bytes=(\d+)-/.exec(rg || ''); const start0 = m0 ? parseInt(m0[1], 10) : 0;
+  const ua = String(q.headers['user-agent'] || 'Mozilla/5.0').replace(/[^\x20-\x7e]/g, '').slice(0, 200);
+  const net = require('net');
+  let s = null, buf = Buffer.alloc(0), hd = false, need = Infinity, sent = 0, fin = false, resumes = 0, firstTry = true;
+  const finish = () => { if (fin) return; fin = true; try { r.end(); } catch (e) {} if (s) s.destroy(); };
+  r.on('error', () => {}); r.on('close', () => { fin = true; if (s) s.destroy(); });
+  const MAXRES = 200;
+  const out = (b) => { if (fin || !b.length) return; const part = b.subarray(0, Math.max(0, need - sent)); sent += part.length; if (part.length && !r.write(part)) { if (s) s.pause(); r.once('drain', () => { if (s) s.resume(); }); } if (sent >= need) finish(); };
+  const onData = (d) => {
+    if (hd) return out(d);
+    buf = Buffer.concat([buf, d]); const i2 = buf.indexOf('\r\n\r\n');
+    if (i2 < 0) { if (buf.length > 16384 && s) s.destroy(); return; }
+    const head = buf.subarray(0, i2).toString('latin1').split('\r\n'); const rest = buf.subarray(i2 + 4);
+    const sm = /^HTTP\/1\.[01] (\d{3})/.exec(head[0] || ''); const st2 = sm ? parseInt(sm[1], 10) : 502; const H = {};
+    let bad = false; for (const ln of head.slice(1)) { const k = ln.indexOf(':'); if (k > 0) { const nm = ln.slice(0, k).trim().toLowerCase(), vl = ln.slice(k + 1).trim(); if ((nm === 'content-length' || nm === 'content-range') && H[nm] !== undefined && H[nm] !== vl) bad = true; H[nm] = vl; } }
+    if (resumes > 0 || sent > 0) {
+      const crx = H['content-range']; const mx = crx === undefined ? null : /^bytes (\d+)-(\d+)\/(\d+|\*)$/.exec(crx);
+      if (bad || st2 !== 206 || !mx || parseInt(mx[1], 10) !== start0 + sent) { LAST = { at: new Date().toISOString(), kind: 'series-resume-refused', status: st2, want: start0 + sent, got: String(crx || '').slice(0, 60) }; try { s.destroy(); } catch (e) {} return; }
+      hd = true; out(rest); return;
+    }
+    LAST = { at: new Date().toISOString(), kind: 'series-node-response', ext: ext, status: st2, content_type: String(H['content-type'] || '').slice(0, 60), content_length: String(H['content-length'] || '').slice(0, 12), accept_ranges: String(H['accept-ranges'] || '').slice(0, 10), has_range: !!rg };
+    if (st2 >= 300 && st2 < 400) { r.statusCode = 502; return finish(); }
+    { const cl = H['content-length'], cr = H['content-range'];
+      const m = cr === undefined ? null : /^bytes (\d+)-(\d+)\/(\d+|\*)$/.exec(cr);
+      let ok = !bad && !H['transfer-encoding'] && (st2 === 200 || st2 === 206) && /^\d+$/.test(cl || '');
+      if (ok && st2 === 206) ok = !!m && (parseInt(m[2], 10) - parseInt(m[1], 10) + 1 === parseInt(cl, 10));
+      if (ok && st2 === 200) ok = cr === undefined;
+      if (!ok) { LAST = { at: new Date().toISOString(), kind: 'series-raw-refused', status: st2, te: !!H['transfer-encoding'], has_cl: !!cl, dup: bad }; r.statusCode = 502; return finish(); } }
+    r.statusCode = st2;
+    for (const k of ['content-type', 'content-range']) if (H[k]) r.setHeader(k, H[k]);
+    r.setHeader('accept-ranges', 'bytes');
+    if (/^\d+$/.test(H['content-length'] || '')) { need = parseInt(H['content-length'], 10); r.setHeader('content-length', String(need)); }
+    hd = true;
+    out(rest);
+    if (need === 0) finish();
+  };
+  const connectUp = () => {
+    if (fin) return;
+    buf = Buffer.alloc(0); hd = false;
+    const off = start0 + sent;
+    s = net.connect({ port: parseInt(port, 10), host: SERIES_HOST, lookup: CUSTOM ? safeLookup : undefined });
+    s.setTimeout(30000, () => { if (s) s.destroy(); });
+    s.on('connect', () => s.write('GET ' + pq + ' HTTP/1.1\r\nHost: ' + SERIES_HOST + (port === '80' ? '' : ':' + port) + '\r\nUser-Agent: ' + ua + '\r\n' + (off > 0 ? 'Range: bytes=' + off + '-\r\n' : (rg ? 'Range: ' + rg + '\r\n' : '')) + 'Connection: close\r\n\r\n'));
+    s.on('data', onData);
+    s.on('error', (e) => { LAST = { at: new Date().toISOString(), kind: 'series-connect-error', code: String(e && e.code || 'unknown') }; try { s.destroy(); } catch (e2) {} });
+    s.on('close', () => {
+      if (fin) return;
+      if (!hd && firstTry) { firstTry = false; if (!r.headersSent) { r.statusCode = 502; } return finish(); }
+      if (sent < need) {
+        if (resumes >= MAXRES) { fin = true; LAST = { at: new Date().toISOString(), kind: 'series-raw-truncated-gaveup', sent: sent, need: need }; try { r.destroy(); } catch (e) {} return; }
+        resumes++; LAST = { at: new Date().toISOString(), kind: 'series-raw-resume', sent: sent, need: need, resumes: resumes };
+        setTimeout(connectUp, 350);
+        return;
+      }
+      finish();
+    });
+  };
+  connectUp();
 }
 const MOVIE_HOST_D = '103.205.17.234'; let MOVIE_HOST = MOVIE_HOST_D;
 let CUSTOM = false, CURPID = 'd';
