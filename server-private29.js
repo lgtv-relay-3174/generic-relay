@@ -292,6 +292,8 @@ const ui = () => {
     .replace('نسخة تجريبية: سيرفر وهمي. مش اشتراكك. ماتكتبش بياناتك الحقيقية.', 'نسخة خاصة. بيانات الدخول بتعدّي على Render وبعدها للسيرفر بدون تشفير.')
     .replace('</script></body></html>', '</script>' + REMEMBER_SCRIPT + PROF_SCRIPT + HLS_SCRIPT + CURTAIN_SCRIPT + '</body></html>')
     .replace('<title>Light IPTV</title>', '<title>المكتبه</title>')
+    .split('encodeURIComponent(M.trim())').join('encodeURIComponent(M.trim()||"__saved_u__")')
+    .split('encodeURIComponent(W)').join('encodeURIComponent(W||"__saved_p__")')
     .replace('createElement("h1",null,"Light IPTV")', 'createElement("h1",null,"المكتبه")')
     .replace('rT.map(X=>se.default.createElement("button",{type:"button",key:X.id,className:"wp-tile"', 'se.default.createElement("div",{className:"wp-tiles"},rT.map(X=>se.default.createElement("button",{type:"button",key:X.id,className:"wp-tile"')
     .replace('se.default.createElement("span",null,X.title),se.default.createElement("small",null,Fa[X.id]))),se.default.createElement("button",{type:"button",className:"wp-row"', 'se.default.createElement("span",{className:"ic ic-"+X.id}),se.default.createElement("span",null,X.title),se.default.createElement("small",null,Fa[X.id])))),se.default.createElement("button",{type:"button",className:"wp-row"')
