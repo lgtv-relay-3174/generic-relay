@@ -115,7 +115,7 @@ function seriesProxy(L2, q, r, ext) {
   };
   connectUp();
 }
-const MOVIE_HOST_D = '103.205.17.234'; let MOVIE_HOST = MOVIE_HOST_D;
+const MOVIE_HOST_D = '103.205.17.234'; const MOVIE_HOST_D2 = '103.205.17.197'; let MOVIE_HOST = MOVIE_HOST_D;
 let CUSTOM = false, CURPID = 'd';
 let MOVIE_PORT = null;
 const RCACHE = new Map();
@@ -126,7 +126,8 @@ function movieProxy(L2, q, r, ext, onFail) {
   if (!/^\d{1,5}$/.test(port) || pq.includes('..') || pq.includes('//') || !SAFE_NODE_PATH.test(pq)) { r.statusCode = 403; return r.end('forbidden'); }
   if (!CUSTOM && MOVIE_PORT && MOVIE_PORT !== port) { LAST = { at: new Date().toISOString(), kind: 'movie-port-changed' }; r.statusCode = 502; return r.end(); }
   MOVIE_PORT = port;
-  const rg = /^bytes=\d*-\d*$/.test(String(q.headers.range || '')) ? q.headers.range : '';
+  let rg = /^bytes=\d*-\d*$/.test(String(q.headers.range || '')) ? q.headers.range : '';
+  if (rg === 'bytes=0-') rg = '';
   const m0 = /^bytes=(\d+)-/.exec(rg || ''); const start0 = m0 ? parseInt(m0[1], 10) : 0;
   const ua = String(q.headers['user-agent'] || 'Mozilla/5.0').replace(/[^\x20-\x7e]/g, '').slice(0, 200);
   const net = require('net');
@@ -154,10 +155,9 @@ function movieProxy(L2, q, r, ext, onFail) {
       const m = cr === undefined ? null : /^bytes (\d+)-(\d+)\/(\d+|\*)$/.exec(cr);
       let ok = !bad && !H['transfer-encoding'] && (st2 === 200 || st2 === 206) && /^\d+$/.test(cl || '');
       if (ok && st2 === 206) ok = !!m && (parseInt(m[2], 10) - parseInt(m[1], 10) + 1 === parseInt(cl, 10));
-      if (ok && st2 === 200) ok = cr === undefined;
       if (!ok) { LAST = { at: new Date().toISOString(), kind: 'movie-raw-refused', status: st2, te: !!H['transfer-encoding'], has_cl: !!cl, dup: bad }; if (bail()) return; r.statusCode = 502; return finish(); } }
     r.statusCode = st2;
-    for (const k of ['content-type', 'content-range']) if (H[k]) r.setHeader(k, H[k]);
+    for (const k of ['content-type', 'content-range']) if (H[k] && (st2 !== 200 || k !== 'content-range')) r.setHeader(k, H[k]);
     r.setHeader('accept-ranges', 'bytes');
     if (/^\d+$/.test(H['content-length'] || '')) { need = parseInt(H['content-length'], 10); r.setHeader('content-length', String(need)); }
     hd = true;
@@ -497,8 +497,8 @@ http.createServer((q, r) => {
     if (ur.statusCode >= 300 && ur.statusCode < 400 && /^\/movie\//.test(u.pathname)) {
       ur.resume();
       let L4 = null; try { L4 = new URL(ur.headers.location, 'http://' + UPX.host); } catch (e) {}
-      if (!L4 || L4.protocol !== 'http:' || !hostOk(L4.hostname, MOVIE_HOST_D) || L4.username || L4.password) { LAST = { at: new Date().toISOString(), kind: 'movie-redirect-refused', location_host: L4 ? L4.hostname : 'unparsable' }; r.statusCode = 502; return r.end(); }
-      if (CUSTOM) { MOVIE_HOST = L4.hostname; MOVIE_PORT = null; }
+      if (!L4 || L4.protocol !== 'http:' || !(hostOk(L4.hostname, MOVIE_HOST_D) || (!CUSTOM && L4.hostname === MOVIE_HOST_D2)) || L4.username || L4.password) { LAST = { at: new Date().toISOString(), kind: 'movie-redirect-refused', location_host: L4 ? L4.hostname : 'unparsable' }; r.statusCode = 502; return r.end(); }
+      { MOVIE_HOST = L4.hostname; MOVIE_PORT = null; }
       if (ck) { if (RCACHE.size > 50) RCACHE.clear(); RCACHE.set(ck, { href: L4.href, exp: Date.now() + 120000 }); }
       return movieProxy(L4, q, r, mext);
     }
