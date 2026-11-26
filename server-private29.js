@@ -83,10 +83,9 @@ function seriesProxy(L2, q, r, ext) {
       const m = cr === undefined ? null : /^bytes (\d+)-(\d+)\/(\d+|\*)$/.exec(cr);
       let ok = !bad && !H['transfer-encoding'] && (st2 === 200 || st2 === 206) && /^\d+$/.test(cl || '');
       if (ok && st2 === 206) ok = !!m && (parseInt(m[2], 10) - parseInt(m[1], 10) + 1 === parseInt(cl, 10));
-      if (ok && st2 === 200) ok = cr === undefined;
       if (!ok) { LAST = { at: new Date().toISOString(), kind: 'series-raw-refused', status: st2, te: !!H['transfer-encoding'], has_cl: !!cl, dup: bad }; r.statusCode = 502; return finish(); } }
     r.statusCode = st2;
-    for (const k of ['content-type', 'content-range']) if (H[k]) r.setHeader(k, H[k]);
+    for (const k of ['content-type', 'content-range']) if (H[k] && (st2 !== 200 || k !== 'content-range')) r.setHeader(k, H[k]);
     r.setHeader('accept-ranges', 'bytes');
     if (/^\d+$/.test(H['content-length'] || '')) { need = parseInt(H['content-length'], 10); r.setHeader('content-length', String(need)); }
     hd = true;
