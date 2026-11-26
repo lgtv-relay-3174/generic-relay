@@ -354,7 +354,7 @@ function hlsStart(q, r, raw) {
   const id = crypto.randomBytes(16).toString('hex'); const dir = pathm.join(HROOT, id); fsx.mkdirSync(dir, { recursive: true });
   const port = process.env.PORT || 10000;
   const args = ['-nostdin', '-loglevel', 'error', '-headers', 'Cookie: ' + (q.headers.cookie || '') + '\r\n', '-i', 'http://127.0.0.1:' + port + src];
-  if (!process.env.NO_READRATE) args.splice(args.indexOf('-i'), 0, '-readrate', '8');
+  if (!process.env.NO_READRATE) args.splice(args.indexOf('-i'), 0, '-readrate', process.env.READRATE || '1.35');
   if (!process.env.NO_RECONNECT) args.splice(args.indexOf('-i'), 0, '-reconnect', '1', '-reconnect_on_network_error', '1', '-reconnect_on_http_error', '4xx,5xx', '-reconnect_delay_max', '4');
   if (dur > 0) args.push('-t', String(Math.min(dur, 7200)));
   args.push('-map', '0:v:0', '-map', '0:a:0', '-c', 'copy', '-f', 'hls', '-hls_time', '6', '-hls_list_size', '0', '-hls_playlist_type', 'event', '-hls_segment_type', 'mpegts', '-hls_flags', 'independent_segments', '-hls_segment_filename', pathm.join(dir, 's%05d.ts'), pathm.join(dir, 'index.m3u8'));
